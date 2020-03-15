@@ -40,7 +40,7 @@ The input data must be located in a Excel file (XLSX) with these columns (also s
  - end: for bar: the end of the bar
  - color: the color in the formar red, green, blue (where each value is between 0 and 255)
  - text-size
- - text-pos
+ - text-pos: empty for default or one of the values "before", "beginning", "center", "end", "after".
  - bold: empty or "FALSE" for false and "TRUE" for yes
  - italic: empty or "FALSE" for false and "TRUE" for yes
  - indent: number of pixels that the label of a section is indented
