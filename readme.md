@@ -27,4 +27,7 @@ java -jar BrightProjectChart-1.0.0-all.jar -i "C:\my-plan.xlsx" -o "C:\charts\\m
 ### Project files
 Example input files can be found [here](https://github.com/pheyse/BrightProjectChart/tree/master/data)
 
+### Chars example
+Here's a project chart created by the tool:
+![Chart](https://github.com/pheyse/BrightProjectChart/blob/master/examples/example_a.png "Chart")
 
