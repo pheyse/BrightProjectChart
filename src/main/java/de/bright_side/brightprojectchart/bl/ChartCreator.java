@@ -1,12 +1,10 @@
 package de.bright_side.brightprojectchart.bl;
 
-import de.bright_side.brightprojectchart.dao.ProjectPlanExcelDAO;
 import de.bright_side.brightprojectchart.logic.ProjectPlanLogic;
 import de.bright_side.brightprojectchart.model.*;
-import org.apache.logging.log4j.Level;
+import de.bright_side.brightprojectchart.model.ProjectPlan.ChartSetting;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.core.config.Configurator;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -17,35 +15,17 @@ import java.text.SimpleDateFormat;
 
 public class ChartCreator {
     private static final Logger LOGGER = LogManager.getLogger(ChartCreator.class);
-
-    private static final ProjectColor CHART_BACKGROUND_COLOR = new ProjectColor(255, 255, 255);
-    private static final int BAR_HEIGHT_IN_PX = 14;
-    private static final int ROW_HEIGHT_IN_PX = 24;
-    private static final int DAY_WIDTH_IN_PX = 3;
-    private static final int LABELS_WIDTH_IN_PX = 150;
-    private static final int TEXT_PADDING_TOP = 3;
-    private static final int TEXT_PADDING_LEFT = 5;
-    private static final ProjectColor SECTION_BORDER_COLOR = new ProjectColor(0, 0, 0);
-    private static final ProjectColor AREAS_BORDER_COLOR = new ProjectColor(0, 0, 0);
-    private static final ProjectColor SECTION_LABEL_COLOR = new ProjectColor(0, 0, 0);
     private static final String SAMPLE_TEXT_TO_DETERMINE_HEIGHT = "THE QUICK FOX JUMPS OVER THE LAZY DOG, the quick fox jumps over the lazy dog. ÄÖÜß";
-    private static final int HEADER_BAR_HEIGHT = 20;
-    private static final String FONT_NAME = "Arial";
-    private static final ProjectColor HEADER_BACKGROUND_COLOR = new ProjectColor(255, 255, 255);
-    private static final int HEADER_BAR_REGULAR_TEXT_SIZE = 12;
-    private static final int HEADER_BAR_SMALL_TEXT_SIZE = 10;
-    private static final ProjectColor HEADER_TEXT_COLOR = new ProjectColor(0, 0, 0);
-    private static final ProjectColor PLAN_ITEM_LABEL_COLOR = new ProjectColor(0, 0, 0);
 
     private ProjectPlanLogic projectPlanLogic = new ProjectPlanLogic();
 
-    public void createChart(File path, ProjectPlan projectPlan) throws Exception {
-        LOGGER.debug("createChart: project time span: " + dateToString(projectPlan.getDateSpan().getStart()) + " - " + dateToString(projectPlan.getDateSpan().getEnd()));
+    public void createChart(File path, ProjectPlan plan) throws Exception {
+        LOGGER.debug("createChart: project time span: " + dateToString(plan.getShownDateSpan().getStart()) + " - " + dateToString(plan.getShownDateSpan().getEnd()));
 
-        int height = projectPlan.getSections().size() * ROW_HEIGHT_IN_PX;
-        int width = LABELS_WIDTH_IN_PX + projectPlanLogic.countDays(projectPlan) * DAY_WIDTH_IN_PX;
+        int height = plan.getSections().size() * getIntSetting(ChartSetting.ROW_HEIGHT_IN_PX, plan);
+        int width = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan) + projectPlanLogic.countDays(plan) * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan);
 
-        height = addHeadingHeight(projectPlan, height);
+        height = addHeadingHeight(plan, height);
 
         LOGGER.debug("createChart: height = " + height);
         LOGGER.debug("createChart: width = " + width);
@@ -57,51 +37,66 @@ public class ChartCreator {
         g.fillRect(0, 0, width, height);
 
         int posY = 0;
-        posY = drawHeadings(projectPlan, width, g, posY);
+        posY = drawHeadings(plan, width, g, posY);
 
         int headingsHeight = posY;
-        for (Section i: projectPlan.getSections()){
-            drawSection(g, posY, width, i, projectPlan.getDateSpan());
-            posY += ROW_HEIGHT_IN_PX;
+        for (Section i: plan.getSections()){
+            drawSection(g, posY, width, i, plan.getShownDateSpan(), plan);
+            posY += getIntSetting(ChartSetting.ROW_HEIGHT_IN_PX, plan);
         }
 
-        drawLineAroundChartAreas(height, width, g, headingsHeight);
+        drawLineAroundChartAreas(height, width, g, headingsHeight, plan);
 
         ImageIO.write(image, "png", path);
     }
 
-    private int addHeadingHeight(ProjectPlan projectPlan, int height) {
-        if (projectPlan.isShowYears()){
-            height += HEADER_BAR_HEIGHT;
+    private int getIntSetting(ChartSetting setting, ProjectPlan plan){
+        return ((Integer)plan.getChartSettings().get(setting)).intValue();
+    }
+
+    private ProjectColor getColorSetting(ChartSetting setting, ProjectPlan plan){
+        return (ProjectColor)plan.getChartSettings().get(setting);
+    }
+
+    private String getStringSetting(ChartSetting setting, ProjectPlan plan){
+        return (String)plan.getChartSettings().get(setting);
+    }
+
+    private int addHeadingHeight(ProjectPlan plan, int height) {
+        int headerBarHeight = getIntSetting(ChartSetting.HEADER_BAR_HEIGHT, plan);
+        if (plan.isShowYears()){
+            height += headerBarHeight;
         }
-        if (projectPlan.isShowMonths()){
-            height += HEADER_BAR_HEIGHT;
+        if (plan.isShowMonths()){
+            height += headerBarHeight;
         }
-        if (projectPlan.isShowWeeks()){
-            height += HEADER_BAR_HEIGHT;
+        if (plan.isShowWeeks()){
+            height += headerBarHeight;
         }
         return height;
     }
 
-    private void drawLineAroundChartAreas(int height, int width, Graphics2D g, int headingsHeight) {
-        g.setColor(toColor(AREAS_BORDER_COLOR));
-        g.drawRect(0, headingsHeight, LABELS_WIDTH_IN_PX, height - headingsHeight - 1); //: labels
-        g.drawRect(LABELS_WIDTH_IN_PX, 0, width - LABELS_WIDTH_IN_PX - 1, headingsHeight); //: heading
-        g.drawRect(LABELS_WIDTH_IN_PX, headingsHeight, width - LABELS_WIDTH_IN_PX - 1, height - headingsHeight - 1); //: plan items
+    private void drawLineAroundChartAreas(int height, int width, Graphics2D g, int headingsHeight, ProjectPlan plan) {
+        g.setColor(toColor(getColorSetting(ChartSetting.AREAS_BORDER_COLOR, plan)));
+        int labelsWidth = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan);
+        g.drawRect(0, headingsHeight, labelsWidth, height - headingsHeight - 1); //: labels
+        g.drawRect(labelsWidth, 0, width - labelsWidth - 1, headingsHeight); //: heading
+        g.drawRect(labelsWidth, headingsHeight, width - labelsWidth - 1, height - headingsHeight - 1); //: plan items
     }
 
-    private int drawHeadings(ProjectPlan projectPlan, int width, Graphics2D g, int posY) {
-        if (projectPlan.isShowMonths()){
-            drawYears(g, posY, width, projectPlan.getDateSpan());
-            posY += HEADER_BAR_HEIGHT;
+    private int drawHeadings(ProjectPlan plan, int width, Graphics2D g, int posY) {
+        int headerBarHeight = getIntSetting(ChartSetting.HEADER_BAR_HEIGHT, plan);
+        if (plan.isShowMonths()){
+            drawYears(g, posY, width, plan.getShownDateSpan(), plan);
+            posY += headerBarHeight;
         }
-        if (projectPlan.isShowMonths()){
-            drawMonths(g, posY, width, projectPlan.getDateSpan());
-            posY += HEADER_BAR_HEIGHT;
+        if (plan.isShowMonths()){
+            drawMonths(g, posY, width, plan.getShownDateSpan(), plan);
+            posY += headerBarHeight;
         }
-        if (projectPlan.isShowWeeks()){
-            drawWeeks(g, posY, width, projectPlan.getDateSpan());
-            posY += HEADER_BAR_HEIGHT;
+        if (plan.isShowWeeks()){
+            drawWeeks(g, posY, width, plan.getShownDateSpan(), plan);
+            posY += headerBarHeight;
         }
         return posY;
     }
@@ -122,18 +117,28 @@ public class ChartCreator {
         return new SimpleDateFormat("ww").format(month);
     }
 
-    private void drawYears(Graphics2D g, int top, int width, DateSpan projectDateSpan) {
-        int posX = LABELS_WIDTH_IN_PX;
+    private void drawYears(Graphics2D g, int top, int width, DateSpan projectDateSpan, ProjectPlan plan) {
+        int posX = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan);
         long currentDay = projectDateSpan.getStart();
 
         while (currentDay < projectDateSpan.getEnd()){
             long endOfYear = projectPlanLogic.getEndOfYear(currentDay);
             long endOfYearOrProject = Math.min(endOfYear, projectDateSpan.getEnd());
-            int cellWidth = projectPlanLogic.subtractDays(endOfYearOrProject, currentDay) * DAY_WIDTH_IN_PX;
-            Font font = new Font(FONT_NAME, Font.BOLD, HEADER_BAR_REGULAR_TEXT_SIZE);
+            int cellWidth = projectPlanLogic.subtractDays(endOfYearOrProject, currentDay) * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan);
+            Font font = new Font(getStringSetting(ChartSetting.FONT_NAME, plan), Font.BOLD
+                    , getIntSetting(ChartSetting.HEADER_BAR_REGULAR_TEXT_SIZE, plan));
             String text = getYearLabel(currentDay);
 
-            drawLabelCell(g, text, top, posX, cellWidth, HEADER_BAR_HEIGHT, font, HEADER_TEXT_COLOR, HEADER_BACKGROUND_COLOR, SECTION_BORDER_COLOR);
+            drawLabelCell(g,
+                    text,
+                    top,
+                    posX,
+                    cellWidth,
+                    getIntSetting(ChartSetting.HEADER_BAR_HEIGHT, plan),
+                    font,
+                    getColorSetting(ChartSetting.HEADER_TEXT_COLOR, plan),
+                    getColorSetting(ChartSetting.HEADER_BACKGROUND_COLOR, plan),
+                    getColorSetting(ChartSetting.SECTION_BORDER_COLOR, plan));
 
             LOGGER.debug("drawYears: currentDay =         " + dateToString(currentDay));
             currentDay = projectPlanLogic.getStartOfNextYear(currentDay);
@@ -142,39 +147,56 @@ public class ChartCreator {
         }
     }
 
-    private void drawMonths(Graphics2D g, int top, int width, DateSpan projectDateSpan) {
-        int posX = LABELS_WIDTH_IN_PX;
+    private void drawMonths(Graphics2D g, int top, int width, DateSpan projectDateSpan, ProjectPlan plan) {
+        int posX = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan);
         long currentDay = projectDateSpan.getStart();
 
         while (currentDay < projectDateSpan.getEnd()){
             long endOfMonth = projectPlanLogic.getEndOfMonth(currentDay);
             long endOfMonthOrProject = Math.min(endOfMonth, projectDateSpan.getEnd());
-            int cellWidth = projectPlanLogic.subtractDays(endOfMonthOrProject, currentDay) * DAY_WIDTH_IN_PX;
-            Font font = new Font(FONT_NAME, Font.BOLD, HEADER_BAR_REGULAR_TEXT_SIZE);
+            int cellWidth = projectPlanLogic.subtractDays(endOfMonthOrProject, currentDay) * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan);
+            Font font = new Font(getFontNameSetting(plan), Font.BOLD, getIntSetting(ChartSetting.HEADER_BAR_REGULAR_TEXT_SIZE, plan));
             String text = getMonthLabel(currentDay);
 
-            drawLabelCell(g, text, top, posX, cellWidth, HEADER_BAR_HEIGHT, font, HEADER_TEXT_COLOR, HEADER_BACKGROUND_COLOR, SECTION_BORDER_COLOR);
+            drawLabelCell(g,
+                    text,
+                    top,
+                    posX,
+                    cellWidth,
+                    getIntSetting(ChartSetting.HEADER_BAR_HEIGHT, plan),
+                    font,
+                    getColorSetting(ChartSetting.HEADER_TEXT_COLOR, plan),
+                    getColorSetting(ChartSetting.HEADER_BACKGROUND_COLOR, plan),
+                    getColorSetting(ChartSetting.SECTION_BORDER_COLOR, plan));
 
             currentDay = projectPlanLogic.getStartOfNextMonth(currentDay);
             posX += cellWidth;
         }
     }
 
-    private void drawWeeks(Graphics2D g, int top, int width, DateSpan projectDateSpan) {
-        int posX = LABELS_WIDTH_IN_PX;
+    private String getFontNameSetting(ProjectPlan plan) {
+        return getStringSetting(ChartSetting.FONT_NAME, plan);
+    }
+
+    private void drawWeeks(Graphics2D g, int top, int width, DateSpan projectDateSpan, ProjectPlan plan) {
+        int posX = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan);
         long currentDay = projectDateSpan.getStart();
 
         while (currentDay < projectDateSpan.getEnd()){
-//            log("drawWeeks: current day =        " + new SimpleDateFormat("ddd, yyyy-MM-dd HH:mm").format(currentDay));
-//            log("drawWeeks: start of next week = " + new SimpleDateFormat("ddd, yyyy-MM-dd HH:mm").format(projectPlanLogic.getStartOfNextWeek(currentDay)));
-//            log("drawWeeks: endOfWeek   =        " + new SimpleDateFormat("ddd, yyyy-MM-dd HH:mm").format(projectPlanLogic.getEndOfWeek(currentDay)));
             long endOfWeek = projectPlanLogic.getEndOfWeek(currentDay);
-            int cellWidth = projectPlanLogic.subtractDays(endOfWeek, currentDay) * DAY_WIDTH_IN_PX;
-//            boolean cellFullyVisible = (currentDay <= projectDateSpan.getStart()) || (endOfWeek <= projectDateSpan.getEnd());
-//            if (cellFullyVisible){
-            Font font = new Font(FONT_NAME, Font.BOLD, HEADER_BAR_SMALL_TEXT_SIZE);
+            int cellWidth = projectPlanLogic.subtractDays(endOfWeek, currentDay) * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan);
+            Font font = new Font(getStringSetting(ChartSetting.FONT_NAME, plan), Font.BOLD, getIntSetting(ChartSetting.HEADER_BAR_SMALL_TEXT_SIZE, plan));
             String text = getWeekLabel(currentDay);
-            drawLabelCell(g, text, top, posX, cellWidth, HEADER_BAR_HEIGHT, font, HEADER_TEXT_COLOR, HEADER_BACKGROUND_COLOR, SECTION_BORDER_COLOR);
+            drawLabelCell(g,
+                    text,
+                    top,
+                    posX,
+                    cellWidth,
+                    getIntSetting(ChartSetting.HEADER_BAR_HEIGHT, plan),
+                    font,
+                    getColorSetting(ChartSetting.HEADER_TEXT_COLOR, plan),
+                    getColorSetting(ChartSetting.HEADER_BACKGROUND_COLOR, plan),
+                    getColorSetting(ChartSetting.SECTION_BORDER_COLOR, plan));
 
             currentDay = projectPlanLogic.getStartOfNextWeek(currentDay);
             posX += cellWidth;
@@ -211,25 +233,27 @@ public class ChartCreator {
      *
      * @return new posY
      */
-    private void drawSection(Graphics2D g, int posY, int chartWidth, Section section, DateSpan projectDateSpan) throws Exception {
-        setFont(g, section.getTextStyle());
+    private void drawSection(Graphics2D g, int posY, int chartWidth, Section section, DateSpan projectDateSpan, ProjectPlan plan) throws Exception {
+        setFont(g, section.getTextStyle(), plan);
         g.setColor(Color.BLACK);
 
         int textOffsetY = getTextOffsetY(g);
 
         //: draw section background
         setColor(g, section.getColor());
-        g.fillRect(0, posY, chartWidth, ROW_HEIGHT_IN_PX);
+        g.fillRect(0, posY, chartWidth, getIntSetting(ChartSetting.ROW_HEIGHT_IN_PX, plan));
 
 
         //: draw section label
-        setColor(g, SECTION_LABEL_COLOR);
-        g.drawString(section.getLabel(), TEXT_PADDING_LEFT + section.getTextStyle().getIndent(), posY + textOffsetY + TEXT_PADDING_TOP);
+        setColor(g, getColorSetting(ChartSetting.SECTION_LABEL_COLOR, plan));
+        g.drawString(section.getLabel(),
+                getIntSetting(ChartSetting.TEXT_PADDING_LEFT, plan) + section.getTextStyle().getIndent(),
+                posY + textOffsetY + getIntSetting(ChartSetting.TEXT_PADDING_TOP, plan));
 
         //: draw section bars
         if (!section.getPlanItems().isEmpty()) {
             for (PlanItem i : section.getPlanItems()) {
-                drawPlanItem(g, i, posY, projectDateSpan);
+                drawPlanItem(g, i, posY, projectDateSpan, plan);
             }
         }
 
@@ -241,14 +265,14 @@ public class ChartCreator {
         return;
     }
 
-    private void setFont(Graphics2D g, TextStyle textStyle) {
+    private void setFont(Graphics2D g, TextStyle textStyle, ProjectPlan plan) {
         int fontStyle = Font.PLAIN;
         if (textStyle.isBold()) {
             fontStyle = Font.BOLD;
         } else if (textStyle.isItalic()){
             fontStyle = Font.ITALIC;
         }
-        Font font = new Font(FONT_NAME, fontStyle, textStyle.getTextSize());
+        Font font = new Font(getStringSetting(ChartSetting.FONT_NAME, plan), fontStyle, textStyle.getTextSize());
         g.setFont(font);
     }
 
@@ -265,7 +289,7 @@ public class ChartCreator {
         return (int) g.getFontMetrics().getStringBounds(text, g).getWidth();
     }
 
-    private void drawPlanItem(Graphics2D g, PlanItem planItem, int posY, DateSpan projectDateSpan) throws Exception {
+    private void drawPlanItem(Graphics2D g, PlanItem planItem, int posY, DateSpan projectDateSpan, ProjectPlan plan) throws Exception {
         //: bar starts after project ends
         if (projectPlanLogic.subtractDays(projectDateSpan.getEnd(), planItem.getDateSpan().getStart()) <= 0){
             return;
@@ -278,17 +302,17 @@ public class ChartCreator {
         setColor(g, planItem.getColor());
         switch (planItem.getType()){
             case BAR:
-                drawBar(g, planItem, posY, projectDateSpan);
+                drawBar(g, planItem, posY, projectDateSpan, plan);
                 break;
             case MILESTONE:
-                drawMilestone(g, planItem, posY, projectDateSpan);
+                drawMilestone(g, planItem, posY, projectDateSpan, plan);
                 break;
             default:
                 throw new Exception("Unexpected plan item type: " + planItem.getType());
         }
     }
 
-    private void drawBar(Graphics2D g, PlanItem planItem, int posY, DateSpan projectDateSpan) throws Exception {
+    private void drawBar(Graphics2D g, PlanItem planItem, int posY, DateSpan projectDateSpan, ProjectPlan plan) throws Exception {
         int barStartDay = projectPlanLogic.subtractDays(planItem.getDateSpan().getStart(), projectDateSpan.getStart());
         int barEndDay = projectPlanLogic.subtractDays(planItem.getDateSpan().getEnd(), projectDateSpan.getStart());
         barStartDay = putInProjectRange(barStartDay, projectDateSpan);
@@ -298,22 +322,23 @@ public class ChartCreator {
         if (barLength <= 0){
             return;
         }
-        int barPadding = (ROW_HEIGHT_IN_PX - BAR_HEIGHT_IN_PX) / 2;
-        int shapeLeft = LABELS_WIDTH_IN_PX + (barStartDay * DAY_WIDTH_IN_PX);
-        int shapeWidth = barLength * DAY_WIDTH_IN_PX;
-        Rectangle shape = new Rectangle(shapeLeft, posY + barPadding, shapeWidth, BAR_HEIGHT_IN_PX);
+        int barPadding = (getIntSetting(ChartSetting.ROW_HEIGHT_IN_PX, plan) - getIntSetting(ChartSetting.BAR_HEIGHT_IN_PX, plan)) / 2;
+        int shapeLeft = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan) + (barStartDay * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan));
+        int shapeWidth = barLength * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan);
+        Rectangle shape = new Rectangle(shapeLeft, posY + barPadding, shapeWidth, getIntSetting(ChartSetting.BAR_HEIGHT_IN_PX, plan));
 //        g.fillRect(shapeLeft, posY + barPadding, shapeWidth, BAR_HEIGHT_IN_PX);
         g.fill(shape);
 
 
-        g.setColor(toColor(PLAN_ITEM_LABEL_COLOR));
-        drawCharItemLabel(g, shape, planItem, TextStyle.TextPos.CENTER);
+        g.setColor(toColor(getColorSetting(ChartSetting.PLAN_ITEM_LABEL_COLOR, plan)));
+        drawCharItemLabel(g, shape, planItem, TextStyle.TextPos.CENTER, plan);
     }
 
     private void drawCharItemLabel(Graphics2D g,
                                    Rectangle shape,
                                    PlanItem planItem,
-                                   TextStyle.TextPos defaultTextPos) throws Exception {
+                                   TextStyle.TextPos defaultTextPos,
+                                   ProjectPlan plan) throws Exception {
         String label = planItem.getLabel();
         if ((label == null) || (label.isEmpty())){
             LOGGER.debug("drawCharItemLabel: label is null");
@@ -322,7 +347,7 @@ public class ChartCreator {
         LOGGER.debug("drawCharItemLabel: shape: " + shape);
 
 
-        setFont(g, planItem.getTextStyle());
+        setFont(g, planItem.getTextStyle(), plan);
 //        g.setFont(new Font(FONT_NAME, Font.PLAIN, 15));
         int textWidth = getTextWidth(g, label);
         int textOffsetY = getTextOffsetY(g);
@@ -361,7 +386,7 @@ public class ChartCreator {
 //        g.drawString("Hello!!!!", shape.x, shape.y + textOffsetY);
     }
 
-    private void drawMilestone(Graphics2D g, PlanItem planItem, int posY, DateSpan projectDateSpan) throws Exception {
+    private void drawMilestone(Graphics2D g, PlanItem planItem, int posY, DateSpan projectDateSpan, ProjectPlan plan) throws Exception {
         long symbolTime = planItem.getDateSpan().getStart();
         if ((symbolTime < projectDateSpan.getStart()) || (symbolTime > projectDateSpan.getEnd())){
             return;
@@ -371,19 +396,19 @@ public class ChartCreator {
         dayIndex = putInProjectRange(dayIndex, projectDateSpan);
 
 
-        int posX = LABELS_WIDTH_IN_PX + (dayIndex * DAY_WIDTH_IN_PX);
+        int posX = getIntSetting(ChartSetting.LABELS_WIDTH_IN_PX, plan) + (dayIndex * getIntSetting(ChartSetting.DAY_WIDTH_IN_PX, plan));
 //        g.fillRect(posX, posY, DAY_WIDTH_IN_PX, BAR_HEIGHT_IN_PX);
 
-        int paddingY = (ROW_HEIGHT_IN_PX - BAR_HEIGHT_IN_PX) / 2;
-        Path2D.Double shape = getMilestoneShape(posX, posY + paddingY, BAR_HEIGHT_IN_PX);
+        int paddingY = (getIntSetting(ChartSetting.ROW_HEIGHT_IN_PX, plan) - getIntSetting(ChartSetting.BAR_HEIGHT_IN_PX, plan)) / 2;
+        Path2D.Double shape = getMilestoneShape(posX, posY + paddingY, getIntSetting(ChartSetting.BAR_HEIGHT_IN_PX, plan));
         g.fill(shape);
 
-        g.setColor(toColor(PLAN_ITEM_LABEL_COLOR));
+        g.setColor(toColor(getColorSetting(ChartSetting.PLAN_ITEM_LABEL_COLOR, plan)));
         TextStyle.TextPos defaultTextPos = TextStyle.TextPos.AFTER;
         if (planItem.getDateSpan().getStart() >= projectDateSpan.getEnd()){
             defaultTextPos = TextStyle.TextPos.BEFORE;
         }
-        drawCharItemLabel(g, toRectangle(shape.getBounds()), planItem, defaultTextPos);
+        drawCharItemLabel(g, toRectangle(shape.getBounds()), planItem, defaultTextPos, plan);
     }
 
     private Rectangle toRectangle(Rectangle bounds) {

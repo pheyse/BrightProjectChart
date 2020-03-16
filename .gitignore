@@ -5,3 +5,5 @@
 /build/classes
 /build/tmp
 /build/generated
+*.ods#
+*.xlsx#

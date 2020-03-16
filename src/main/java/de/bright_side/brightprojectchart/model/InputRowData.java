@@ -1,11 +1,11 @@
 package de.bright_side.brightprojectchart.model;
 
 public class InputRowData {
-    public enum RowType {SECTION, BAR, MILESTONE}
+    public enum RowType {SETTING, SECTION, BAR, MILESTONE}
 
     private RowType rowType;
-    private String value;
     private String setting;
+    private String value;
     private String label;
     private Long start;
     private Long end;

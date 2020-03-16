@@ -1,7 +1,7 @@
 package de.bright_side.brightprojectchart.dao;
 
-import de.bright_side.brightprojectchart.bl.ChartCreator;
 import de.bright_side.brightprojectchart.model.*;
+import de.bright_side.brightprojectchart.model.ProjectPlan.ChartSetting;
 import de.bright_side.brightprojectchart.util.ExcelUtil;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
@@ -14,23 +14,18 @@ import java.util.*;
 import java.util.logging.Logger;
 
 public class ProjectPlanExcelDAO {
-    private final static Logger LOGGER = Logger.getLogger(ChartCreator.class.getName());
+    private final static Logger LOGGER = Logger.getLogger(ProjectPlanExcelDAO.class.getName());
 
     private static final int NUMBER_OF_COLUMNS = 12;
     private static final String TYPE_STRING_SECTION = "section";
     private static final String TYPE_STRING_BAR = "bar";
     private static final String TYPE_STRING_MILESTONE = "milestone";
+    private static final String TYPE_STRING_SETTING = "setting";
     private static final int DEFAULT_TEXT_SIZE = 12;
     private static final ProjectColor DEFAULT_SECTION_COLOR = new ProjectColor(255, 255, 255);
     private static final ProjectColor DEFAULT_BAR_COLOR = new ProjectColor(76, 108, 156);
     private static final ProjectColor DEFAULT_MILESTONE_COLOR = new ProjectColor(255, 192, 0);
-
-    private void addError(ProjectPlan plan, String message){
-        if (plan.getErrors() == null){
-            plan.setErrors(new ArrayList<>());
-        }
-        plan.getErrors().add(message);
-    }
+    private static final Map<String, ChartSetting> SETTING_NAME_TO_ENUM_MAP = ChartSettingsDAO.getSettingNameToCharSettingMap();
 
     public ProjectPlan readProjectPlan(File file, String sheetName) {
         ProjectPlan result = new ProjectPlan();
@@ -42,12 +37,12 @@ public class ProjectPlanExcelDAO {
             if (sheetName != null){
                 sheet = workbook.getSheet(sheetName);
                 if (sheet == null){
-                    addError(result, "There is no sheet with name '" + sheetName + "'");
+                    DAOUtil.addError(result, "There is no sheet with name '" + sheetName + "'");
                     return result;
                 }
             } else {
                 if (workbook.getNumberOfSheets() > 1){
-                    addError(result, "There are multiple sheets in the workbook. Please specify the sheet name");
+                    DAOUtil.addError(result, "There are multiple sheets in the workbook. Please specify the sheet name");
                     return result;
                 }
             }
@@ -55,15 +50,29 @@ public class ProjectPlanExcelDAO {
             readProjectPlanFromSheet(sheet, result);
         } catch (Exception e){
             e.printStackTrace();
-            addError(result, "" + e);
+            DAOUtil.addError(result, "" + e);
             return result;
         }
 
-        if (result.getDateSpan() == null){
-            result.setDateSpan(determineDateSpan(result));
-        }
+        setShownDateSpan(result);
+
 
         return result;
+    }
+
+    private void setShownDateSpan(ProjectPlan result) {
+        if (result.getShownDateSpan() == null){
+            result.setShownDateSpan(determineDateSpan(result));
+        }
+        Long settingsStartDate = (Long)result.getChartSettings().get(ChartSetting.CHART_START_DATE);
+        Long settingsEndDate = (Long)result.getChartSettings().get(ChartSetting.CHART_END_DATE);
+
+        if (settingsStartDate != null){
+            result.getShownDateSpan().setStart(settingsStartDate);
+        }
+        if (settingsEndDate != null){
+            result.getShownDateSpan().setEnd(settingsEndDate);
+        }
     }
 
     private DateSpan determineDateSpan(ProjectPlan plan) {
@@ -112,6 +121,7 @@ public class ProjectPlanExcelDAO {
         result.setShowWeeks(true);
         result.setShowMonths(true);
         result.setShowYears(true);
+        result.setChartSettings(new ChartSettingsDAO().getDefaultChartSettings());
     }
 
     private void readProjectPlanFromSheet(Sheet sheet, ProjectPlan result) {
@@ -144,6 +154,9 @@ public class ProjectPlanExcelDAO {
 
     private void readRowData(InputRowData rowData, ProjectPlan plan, int rowIndex) {
         switch (rowData.getRowType()){
+            case SETTING:
+                readSetting(rowData, plan, rowIndex);
+                break;
             case SECTION:
                 readSection(rowData, plan, rowIndex);
                 break;
@@ -152,7 +165,7 @@ public class ProjectPlanExcelDAO {
                 readBarOrMilestone(rowData, plan, rowIndex);
                 break;
             default:
-                addError(plan, "Unknown row type: " + rowData.getRowType());
+                DAOUtil.addError(plan, "Unknown row type: " + rowData.getRowType());
         }
     }
 
@@ -169,15 +182,15 @@ public class ProjectPlanExcelDAO {
             item.setType(PlanItem.PlanItemType.MILESTONE);
             typeName = "milestones";
         } else {
-            addError(plan, "Unexpected row type: " + rowData.getRowType());
+            DAOUtil.addError(plan, "Unexpected row type: " + rowData.getRowType());
             return;
         }
 
         if (hasValue(rowData.getSetting())){
-            addError(plan, "There should be no entry for 'setting' for " + typeName);
+            DAOUtil.addError(plan, "There should be no entry for 'setting' for " + typeName);
         }
         if (hasValue(rowData.getValue())){
-            addError(plan, "There should be no entry for 'value' for " + typeName);
+            DAOUtil.addError(plan, "There should be no entry for 'value' for " + typeName);
         }
 
         item.setLabel(getLabel(rowData));
@@ -191,14 +204,14 @@ public class ProjectPlanExcelDAO {
 
 
         if (rowData.getStart() == null){
-            addError(plan, "The value for 'start' may not be empty");
+            DAOUtil.addError(plan, "The value for 'start' may not be empty");
             return;
         }
 
         long useEnd = 0;
         if (rowData.getRowType() == InputRowData.RowType.MILESTONE){
             if ((rowData.getEnd() != null) && (!rowData.getEnd().equals(rowData.getStart()))){
-                addError(plan, "There should no entry for 'end' for milestones (or it should be equal to the start)");
+                DAOUtil.addError(plan, "There should no entry for 'end' for milestones (or it should be equal to the start)");
                 return;
             }
             useEnd = rowData.getStart();
@@ -231,20 +244,39 @@ public class ProjectPlanExcelDAO {
         return !nvl(string, "").trim().isEmpty();
     }
 
+    private void readSetting(InputRowData rowData, ProjectPlan plan, int rowIndex) {
+        if (rowData.getSetting() == null){
+            DAOUtil.addError(plan, "'" + TYPE_STRING_SETTING + "' was set as a type but the setting column is empty.");
+            return;
+        }
+
+        ChartSetting setting = SETTING_NAME_TO_ENUM_MAP.get(rowData.getSetting().toLowerCase());
+        if (setting == null) {
+            DAOUtil.addError(plan, "Unknown setting '" + rowData.getSetting() + "'. Possible values: " + SETTING_NAME_TO_ENUM_MAP.keySet());
+            return;
+        }
+
+        String errorMessage = new ChartSettingsDAO().applyStringSetting(plan, setting, rowData.getValue());
+        if (errorMessage != null) {
+            DAOUtil.addError(plan, errorMessage);
+            return;
+        }
+    }
+
     private void readSection(InputRowData rowData, ProjectPlan plan, int rowIndex) {
         if (plan.getSections() == null){
             plan.setSections(new ArrayList<>());
         }
 
         if (hasValue(rowData.getSetting())){
-            addError(plan, "There should be no entry for 'setting' for sections");
+            DAOUtil.addError(plan, "There should be no entry for 'setting' for sections");
         }
         if (hasValue(rowData.getValue())){
-            addError(plan, "There should be no entry for 'value' for sections");
+            DAOUtil.addError(plan, "There should be no entry for 'value' for sections");
         }
 
         if (rowData.getTextPos() != null){
-            addError(plan, "There should be no entry for 'text-pos' value for sections");
+            DAOUtil.addError(plan, "There should be no entry for 'text-pos' value for sections");
         }
 
         Section section = new Section();
@@ -313,59 +345,58 @@ public class ProjectPlanExcelDAO {
     }
 
     protected ProjectColor readColor(String colorString, ProjectPlan plan) {
-        if ((colorString == null) || (colorString.trim().isEmpty())){
+        DAOUtil.ReadColorResult readColorResult = DAOUtil.readColor(colorString);
+        if (readColorResult.errorMessage != null){
+            DAOUtil.addError(plan, readColorResult.errorMessage);
             return null;
         }
+        return readColorResult.color;
 
-        try{
-            String rest = colorString.trim();
-            int pos = rest.indexOf(",");
-            if (pos < 0){
-                throw new Exception("Wrong format");
-            }
-
-            int red = readInt(rest.substring(0, pos).trim(), 0, 255);
-
-            rest = rest.substring(pos + 1);
-            pos = rest.indexOf(",");
-            if (pos < 0){
-                throw new Exception("Wrong format");
-            }
-
-            int green = readInt(rest.substring(0, pos).trim(), 0, 255);
-            rest = rest.substring(pos + 1);
-
-            int blue = readInt(rest.trim(), 0, 255);
-
-            return new ProjectColor(red, green, blue);
-        } catch (Exception e){
-            addError(plan, "Could not read color value from text: '" + colorString
-                    + "'. Colors must have the format '128,255,0' where the first value is red, the second green and " +
-                    "the last is blue. Each value must be between 0 and 255");
-            return null;
-        }
-    }
-
-    private int readInt(String text, int min, int max) throws Exception {
-        int result = Integer.valueOf(text.trim());
-        if (result < min){
-            throw new Exception("value lower than " + min);
-        }
-        if (result > max){
-            throw new Exception("value greater than " + max);
-        }
-        return result;
+//
+//        if ((colorString == null) || (colorString.trim().isEmpty())){
+//            return null;
+//        }
+//
+//        try{
+//            String rest = colorString.trim();
+//            int pos = rest.indexOf(",");
+//            if (pos < 0){
+//                throw new Exception("Wrong format");
+//            }
+//
+//            int red = DAOUtil.readInt(rest.substring(0, pos).trim(), 0, 255);
+//
+//            rest = rest.substring(pos + 1);
+//            pos = rest.indexOf(",");
+//            if (pos < 0){
+//                throw new Exception("Wrong format");
+//            }
+//
+//            int green = DAOUtil.readInt(rest.substring(0, pos).trim(), 0, 255);
+//            rest = rest.substring(pos + 1);
+//
+//            int blue = DAOUtil.readInt(rest.trim(), 0, 255);
+//
+//            return new ProjectColor(red, green, blue);
+//        } catch (Exception e){
+//            addError(plan, "Could not read color value from text: '" + colorString
+//                    + "'. Colors must have the format '128,255,0' where the first value is red, the second green and " +
+//                    "the last is blue. Each value must be between 0 and 255");
+//            return null;
+//        }
     }
 
     private InputRowData.RowType readRowType(String typeString, ProjectPlan plan) {
-        String possibleRowTypesInfo = "Possible values: '" + TYPE_STRING_SECTION + "', '" + TYPE_STRING_BAR + "', '"
+        String possibleRowTypesInfo = "Possible values: '" + TYPE_STRING_SETTING + "', '" + TYPE_STRING_SECTION + "', '" + TYPE_STRING_BAR + "', '"
                 + TYPE_STRING_MILESTONE + "'";
         if ((typeString == null) || (typeString.isEmpty())){
-            addError(plan, "Missing type value. " + possibleRowTypesInfo);
+            DAOUtil.addError(plan, "Missing type value. " + possibleRowTypesInfo);
             return null;
         }
 
-        if (typeString.equalsIgnoreCase(TYPE_STRING_SECTION)) {
+        if (typeString.equalsIgnoreCase(TYPE_STRING_SETTING)) {
+            return InputRowData.RowType.SETTING;
+        } else if (typeString.equalsIgnoreCase(TYPE_STRING_SECTION)) {
             return InputRowData.RowType.SECTION;
         } else if (typeString.equalsIgnoreCase(TYPE_STRING_BAR)){
             return InputRowData.RowType.BAR;
@@ -373,7 +404,7 @@ public class ProjectPlanExcelDAO {
             return InputRowData.RowType.MILESTONE;
         }
 
-        addError(plan, "Unexpected value for type. " + possibleRowTypesInfo);
+        DAOUtil.addError(plan, "Unexpected value for type. " + possibleRowTypesInfo);
         return null;
     }
 
@@ -397,7 +428,7 @@ public class ProjectPlanExcelDAO {
         try{
             return TextStyle.TextPos.valueOf(posString.toUpperCase());
         } catch (Exception e){
-            addError(plan, "Unexpected value for text-pos. " + possibleRowTypesInfo);
+            DAOUtil.addError(plan, "Unexpected value for text-pos. " + possibleRowTypesInfo);
             return null;
         }
     }
@@ -415,11 +446,11 @@ public class ProjectPlanExcelDAO {
     private void verifyCellText(ProjectPlan plan, Row row, int column, String text) {
         Cell cell = row.getCell(column);
         if (cell == null){
-            addError(plan, "There is no cell in row 1 at column " + (column + 1));
+            DAOUtil.addError(plan, "There is no cell in row 1 at column " + (column + 1));
             return;
         }
         if (!cell.getStringCellValue().equalsIgnoreCase(text)){
-            addError(plan, "The text of cell in row 1 at column " + (column + 1)
+            DAOUtil.addError(plan, "The text of cell in row 1 at column " + (column + 1)
                     + " must have the text '" + text + "', but is '" + cell.getStringCellValue() + "'");
             return;
         }

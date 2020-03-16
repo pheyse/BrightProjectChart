@@ -44,7 +44,7 @@ public class ProjectPlanLogic {
     }
 
     public int countDays(ProjectPlan projectPlan) {
-        return countDays(projectPlan.getDateSpan().getStart(), projectPlan.getDateSpan().getEnd());
+        return countDays(projectPlan.getShownDateSpan().getStart(), projectPlan.getShownDateSpan().getEnd());
     }
 
     public long getEndOfMonth(long startDate){

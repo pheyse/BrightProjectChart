@@ -23,7 +23,7 @@ public class ProjectPlanDummyDAO {
         result.setShowWeeks(true);
 
         result.setSections(new ArrayList<>());
-        result.setDateSpan(new DateSpan(toDate("2020-01-01"), toDate("2020-12-31")));
+        result.setShownDateSpan(new DateSpan(toDate("2020-01-01"), toDate("2020-12-31")));
 
         result.getSections().add(createDummySection("My Section 1", true, DUMMY_COLOR_1, null, null, null, null));
         result.getSections().add(createDummySection("My Section 1.1", false, DUMMY_COLOR_2, "2020-03-01", "2020-08-01", "2020-10-01", "2020-11-20"));
